@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import { Route, Routes } from 'react-router-dom';
-import { Cloud, CloudOff, DollarSign, Eye, EyeOff, IndianRupee, LayoutList, Loader2 } from 'lucide-react';
+import { Cloud, CloudOff, Eye, EyeOff, LayoutList, Loader2 } from 'lucide-react';
 import { AgentBar } from './components/AgentBar';
 import { AgentUndoStrip } from './components/AgentUndoStrip';
 import { MonthStrip } from './components/MonthStrip';
@@ -177,14 +177,14 @@ export default function App() {
               onClick={() => setCurrency(currency === 'INR' ? 'USD' : 'INR')}
               animate={{ rotate: [0, -6, 6, 0] }}
               transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-teal-400 shadow-lg shadow-violet-500/30 sm:h-11 sm:w-11"
+              className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl sm:h-11 sm:w-11"
               title={`Switch currency to ${currency === 'INR' ? '$' : '₹'}`}
             >
-              {currency === 'INR' ? (
-                <IndianRupee className="h-5 w-5 text-white sm:h-6 sm:w-6" strokeWidth={2.5} />
-              ) : (
-                <DollarSign className="h-5 w-5 text-white sm:h-6 sm:w-6" strokeWidth={2.5} />
-              )}
+              <img
+                src="/WebsiteLogo.jpg"
+                alt="Website logo"
+                className="h-full w-full object-cover"
+              />
             </motion.button>
             <div className="min-w-0">
               <h1 className="font-display text-base font-bold text-white sm:text-xl">Expense Tracker</h1>
@@ -219,7 +219,7 @@ export default function App() {
               title={maskNumbers ? 'Show money amounts' : 'Hide money amounts for sharing'}
             >
               {maskNumbers ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-              <span className="hidden sm:inline">{maskNumbers ? 'Show numbers' : 'Hide numbers'}</span>
+              <span className="hidden sm:inline">{maskNumbers ? 'Show Data' : 'Hide Data'}</span>
               <span className="sm:hidden">{maskNumbers ? 'Show' : 'Hide'}</span>
             </button>
             {user && (
