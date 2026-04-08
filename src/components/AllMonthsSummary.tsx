@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { format, parse } from 'date-fns';
-import { ArrowDownToLine, Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { BankAccountBalance, ExpenseCategory, IncomeEntry, IncomeKind, MonthRecord } from '../types';
 import { AnimatedRupees } from './AnimatedRupees';
@@ -9,6 +9,7 @@ import { createId } from '../utils/id';
 import { MonthStatCards, STAT_GRADIENTS } from './MonthHeadingStats';
 import { ExpensePie } from './ExpensePie';
 import { SalaryForm } from './SalaryForm';
+import { StepUpSipCalculator } from './StepUpSipCalculator';
 
 type Props = {
   months: MonthRecord[];
@@ -618,41 +619,8 @@ export function AllMonthsSummary({
           onAddSalary={onAddIncome}
           footerHint="Appears in the income table below and refreshes the totals above."
         />
-        <aside className="flex flex-col justify-between rounded-2xl border border-white/10 bg-ink-900 p-4 shadow-none sm:p-5">
-          <div>
-            <h3 className="font-display text-sm font-semibold text-white">How income fits in</h3>
-            <p className="mt-1 text-[11px] leading-relaxed text-ink-400">
-              What you add here shows up in the line-by-line table below and in the summary cards at the top.
-            </p>
-            <ul className="mt-3 space-y-2 text-xs text-ink-300">
-              <li className="flex gap-2">
-                <span className="shrink-0" aria-hidden>
-                  💰
-                </span>
-                <span>
-                  <span className="font-medium text-ink-100">Salary & other</span> — counted toward
-                  monthly income and cash flow.
-                </span>
-              </li>
-              <li className="flex gap-2">
-                <span className="shrink-0" aria-hidden>
-                  📈
-                </span>
-                <span>
-                  <span className="font-medium text-ink-100">Investments</span> — tracked in their
-                  own column; they affect savings vs bank reconciliation.
-                </span>
-              </li>
-            </ul>
-          </div>
-          <button
-            type="button"
-            onClick={() => allIncomeSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-            className="mt-4 inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-xs font-semibold text-ink-100 transition hover:border-violet-400/30 hover:bg-violet-500/10"
-          >
-            <ArrowDownToLine className="h-3.5 w-3.5 text-violet-300" />
-            Jump to income table
-          </button>
+        <aside className="flex min-h-0 flex-col rounded-2xl border border-white/10 bg-ink-900 p-4 shadow-none sm:p-5">
+          <StepUpSipCalculator maskNumbers={maskNumbers} className="min-h-0 w-full flex-1" />
         </aside>
       </div>
 
