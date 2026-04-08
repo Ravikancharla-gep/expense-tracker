@@ -19,7 +19,7 @@ import {
 } from '../storage';
 import { createId } from '../utils/id';
 import { parseQuickCommand } from '../utils/nlParser';
-import { DEFAULT_MONTHLY_EXPENSE_LINES, EXPENSE_CATEGORIES } from '../constants';
+import { DEFAULT_EXPENSE_CATEGORIES, DEFAULT_MONTHLY_EXPENSE_LINES } from '../constants';
 
 function currentMonthKey(): string {
   const d = new Date();
@@ -120,6 +120,25 @@ export function useExpenseStore(authenticatedUserId: string | null) {
     return data.months.find((m) => m.monthKey === selectedMonthKey) ?? null;
   }, [data.months, selectedMonthKey]);
 
+  const customSections = useMemo(() => {
+    const defaultsLower = new Set(DEFAULT_EXPENSE_CATEGORIES.map((c) => c.toLowerCase()));
+    const raw = Array.isArray(data.customSections) ? data.customSections : [];
+    const seen = new Set<string>();
+    const out: ExpenseCategory[] = [];
+    for (const s of raw) {
+      const t = String(s ?? '').trim();
+      if (!t) continue;
+      const low = t.toLowerCase();
+      if (defaultsLower.has(low)) continue; // never treat built-ins as “custom”
+      if (seen.has(low)) continue;
+      seen.add(low);
+      out.push(t);
+    }
+    return out;
+  }, [data.customSections]);
+
+  const sections = useMemo(() => [...DEFAULT_EXPENSE_CATEGORIES, ...customSections], [customSections]);
+
   const totals = useMemo(() => {
     if (!month) {
       return {
@@ -136,13 +155,13 @@ export function useExpenseStore(authenticatedUserId: string | null) {
       else income += e.amount;
     }
     const byCategory = {} as Record<ExpenseCategory, number>;
-    for (const c of EXPENSE_CATEGORIES) byCategory[c] = 0;
+    for (const c of sections) byCategory[c] = 0;
     for (const e of month.expenses) {
-      byCategory[e.category] += e.amount;
+      byCategory[e.category] = (byCategory[e.category] ?? 0) + e.amount;
     }
     const expenses = month.expenses.reduce((s, e) => s + e.amount, 0);
     return { income, investment, expenses, byCategory };
-  }, [month]);
+  }, [month, sections]);
 
   const lifetimeTotals = useMemo(() => {
     let income = 0;
@@ -243,6 +262,123 @@ export function useExpenseStore(authenticatedUserId: string | null) {
     },
     []
   );
+
+  const addCustomSection = useCallback((name: string): boolean => {
+    const section = name.trim();
+    if (!section) return false;
+    setData((prev) => {
+      const defaultsLower = new Set(DEFAULT_EXPENSE_CATEGORIES.map((c) => c.toLowerCase()));
+      if (defaultsLower.has(section.toLowerCase())) return prev;
+      const raw = Array.isArray(prev.customSections) ? prev.customSections : [];
+      const filtered: ExpenseCategory[] = [];
+      const seen = new Set<string>();
+      for (const s of raw) {
+        const t = String(s ?? '').trim();
+        if (!t) continue;
+        const low = t.toLowerCase();
+        if (defaultsLower.has(low)) continue;
+        if (seen.has(low)) continue;
+        seen.add(low);
+        filtered.push(t);
+      }
+      if (filtered.some((x) => x.toLowerCase() === section.toLowerCase())) return prev;
+      return {
+        ...prev,
+        customSections: [...filtered, section],
+        bankAccounts: [...prev.bankAccounts],
+        months: prev.months.map((m) => ({ ...m, income: [...m.income], expenses: [...m.expenses] })),
+      };
+    });
+    return true;
+  }, []);
+
+  const renameSection = useCallback((from: ExpenseCategory, toRaw: string): boolean => {
+    const to = toRaw.trim();
+    if (!to) return false;
+    let changed = false;
+    setData((prev) => {
+      const fromLow = String(from ?? '').toLowerCase();
+      const toLow = to.toLowerCase();
+      const defaultsLower = new Set(DEFAULT_EXPENSE_CATEGORIES.map((c) => c.toLowerCase()));
+      if (defaultsLower.has(fromLow)) return prev; // built-ins are not editable
+
+      const raw = Array.isArray(prev.customSections) ? prev.customSections : [];
+      const filtered: ExpenseCategory[] = [];
+      const seen = new Set<string>();
+      for (const s of raw) {
+        const t = String(s ?? '').trim();
+        if (!t) continue;
+        const low = t.toLowerCase();
+        if (defaultsLower.has(low)) continue;
+        if (seen.has(low)) continue;
+        seen.add(low);
+        filtered.push(t);
+      }
+      if (!filtered.some((x) => x.toLowerCase() === fromLow)) return prev;
+      if (defaultsLower.has(toLow)) return prev;
+      if (filtered.some((x) => x.toLowerCase() !== fromLow && x.toLowerCase() === toLow)) return prev;
+      changed = true;
+      return {
+        ...prev,
+        customSections: filtered.map((x) => (x.toLowerCase() === fromLow ? to : x)),
+        bankAccounts: [...prev.bankAccounts],
+        months: prev.months.map((m) => ({
+          ...m,
+          income: [...m.income],
+          expenses: m.expenses.map((e) =>
+            String(e.category ?? '').toLowerCase() === fromLow ? { ...e, category: to } : { ...e },
+          ),
+        })),
+      };
+    });
+    return changed;
+  }, []);
+
+  const deleteCustomSection = useCallback((section: ExpenseCategory): boolean => {
+    const raw = String(section ?? '').trim();
+    if (!raw) return false;
+    const rawLow = raw.toLowerCase();
+    const defaultsLower = new Set(DEFAULT_EXPENSE_CATEGORIES.map((c) => c.toLowerCase()));
+    if (defaultsLower.has(rawLow)) return false; // built-ins can’t be deleted
+
+    setData((prev) => {
+      const prevRaw = Array.isArray(prev.customSections) ? prev.customSections : [];
+      const nextCustom = prevRaw
+        .map((s) => String(s ?? '').trim())
+        .filter(Boolean)
+        .filter((s) => s.toLowerCase() !== rawLow)
+        .filter((s) => !defaultsLower.has(s.toLowerCase()));
+
+      // Keep “Other” as the catch-all category.
+      const fallback: ExpenseCategory = 'Other';
+
+      return {
+        ...prev,
+        customSections: nextCustom.length > 0 ? nextCustom : undefined,
+        bankAccounts: [...prev.bankAccounts],
+        months: prev.months.map((m) => ({
+          ...m,
+          income: [...m.income],
+          expenses: m.expenses.map((e) =>
+            String(e.category ?? '').toLowerCase() === rawLow ? { ...e, category: fallback } : { ...e },
+          ),
+        })),
+      };
+    });
+    return true;
+  }, []);
+
+  const moveExpenseToCategory = useCallback((monthKey: string, id: string, category: ExpenseCategory) => {
+    setData((prev) => ({
+      ...prev,
+      bankAccounts: [...prev.bankAccounts],
+      months: prev.months.map((m) =>
+        m.monthKey !== monthKey
+          ? m
+          : { ...m, expenses: m.expenses.map((e) => (e.id === id ? { ...e, category } : e)) }
+      ),
+    }));
+  }, []);
 
   /** Adds default ₹0 line items for the month where that category+label is not already present. */
   const addDefaultMonthlyExpenseLines = useCallback((monthKey: string) => {
@@ -363,6 +499,10 @@ export function useExpenseStore(authenticatedUserId: string | null) {
     if (typeof next.investmentProfit === 'number' && Number.isFinite(next.investmentProfit)) {
       d.investmentProfit = next.investmentProfit;
     }
+    if (next.currency === 'USD' || next.currency === 'INR') d.currency = next.currency;
+    if (next.customSections && next.customSections.length > 0) {
+      d.customSections = [...next.customSections];
+    }
     if (next.categoryTileImages && Object.keys(next.categoryTileImages).length > 0) {
       d.categoryTileImages = { ...next.categoryTileImages };
     }
@@ -448,6 +588,20 @@ export function useExpenseStore(authenticatedUserId: string | null) {
     setBankAccounts,
     setInvestmentProfit,
     setCategoryTileImage,
+    addCustomSection,
+    renameSection,
+    deleteCustomSection,
+    moveExpenseToCategory,
+    currency: data.currency ?? 'INR',
+    setCurrency: (currency: 'INR' | 'USD') =>
+      setData((prev) => ({
+        ...prev,
+        currency,
+        bankAccounts: [...prev.bankAccounts],
+        months: prev.months.map((m) => ({ ...m, income: [...m.income], expenses: [...m.expenses] })),
+      })),
+    customSections,
+    sections,
     runAgentCommand,
     agentMessage,
     clearAgentMessage: () => setAgentMessage(null),

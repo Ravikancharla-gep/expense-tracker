@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import { Route, Routes } from 'react-router-dom';
-import { Cloud, CloudOff, Eye, EyeOff, IndianRupee, LayoutList, Loader2 } from 'lucide-react';
+import { Cloud, CloudOff, DollarSign, Eye, EyeOff, IndianRupee, LayoutList, Loader2 } from 'lucide-react';
 import { AgentBar } from './components/AgentBar';
 import { AgentUndoStrip } from './components/AgentUndoStrip';
 import { MonthStrip } from './components/MonthStrip';
@@ -19,6 +19,7 @@ import { useExpenseStore, type AgentUndo } from './hooks/useExpenseStore';
 import { useSupabaseAuth } from './hooks/useSupabaseAuth';
 import { isCloudBackendConfigured } from './storage';
 import type { AppData, ExpenseCategory } from './types';
+import { setActiveCurrency } from './utils/format';
 
 function categoryDetailPath(category: ExpenseCategory): string {
   return `/category/${encodeURIComponent(category)}`;
@@ -64,7 +65,14 @@ function SyncBadge({ status }: { status: SyncStatus }) {
 
 export default function App() {
   const requireLogin = isCloudBackendConfigured();
-  const { user, authLoading, signInWithPassword, signUpWithPassword, signOut: supabaseSignOut } = useSupabaseAuth();
+  const {
+    user,
+    authLoading,
+    signInWithPassword,
+    signUpWithPassword,
+    signOut: supabaseSignOut,
+    updatePassword,
+  } = useSupabaseAuth();
 
   const {
     data,
@@ -88,6 +96,14 @@ export default function App() {
     setBankAccounts,
     setInvestmentProfit,
     setCategoryTileImage,
+    addCustomSection,
+    renameSection,
+    deleteCustomSection,
+    moveExpenseToCategory,
+    currency,
+    setCurrency,
+    sections,
+    customSections,
     runAgentCommand,
     agentMessage,
     clearAgentMessage,
@@ -110,6 +126,10 @@ export default function App() {
   const [agentTrail, setAgentTrail] = useState<AgentUndo[]>([]);
   const [quickAddHighlightId, setQuickAddHighlightId] = useState<string | null>(null);
   const expenseSplitSectionRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    setActiveCurrency(currency);
+  }, [currency]);
 
   useEffect(() => {
     setViewYear(yearFromKey(selectedMonthKey));
@@ -152,16 +172,23 @@ export default function App() {
       <header className="relative z-30 border-b border-white/5 bg-ink-950/40 backdrop-blur-xl">
         <div className="mx-auto grid max-w-6xl grid-cols-[1fr_auto_1fr] items-center gap-3 px-4 py-3 sm:gap-4 sm:px-6 sm:py-4">
           <div className="flex min-w-0 items-center gap-3">
-            <motion.div
+            <motion.button
+              type="button"
+              onClick={() => setCurrency(currency === 'INR' ? 'USD' : 'INR')}
               animate={{ rotate: [0, -6, 6, 0] }}
               transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-teal-400 shadow-lg shadow-violet-500/30 sm:h-11 sm:w-11"
+              title={`Switch currency to ${currency === 'INR' ? '$' : '₹'}`}
             >
-              <IndianRupee className="h-5 w-5 text-white sm:h-6 sm:w-6" strokeWidth={2.5} />
-            </motion.div>
+              {currency === 'INR' ? (
+                <IndianRupee className="h-5 w-5 text-white sm:h-6 sm:w-6" strokeWidth={2.5} />
+              ) : (
+                <DollarSign className="h-5 w-5 text-white sm:h-6 sm:w-6" strokeWidth={2.5} />
+              )}
+            </motion.button>
             <div className="min-w-0">
               <h1 className="font-display text-base font-bold text-white sm:text-xl">Expense Tracker</h1>
-              <p className="text-[11px] text-ink-500 sm:text-xs">Every rupee, every month — beautifully.</p>
+              <p className="text-[11px] text-ink-500 sm:text-xs">Track every expense, every month.</p>
             </div>
           </div>
           <div className="flex justify-center">
@@ -200,6 +227,10 @@ export default function App() {
                 email={user.email ?? user.id}
                 onSignOut={handleSignOut}
                 onOpenDataRecovery={() => setDataRecoveryOpen(true)}
+                onChangePassword={async (nextPassword) => {
+                  const r = await updatePassword(nextPassword);
+                  if (r.error) throw new Error(r.error);
+                }}
               />
             )}
           </div>
@@ -212,6 +243,7 @@ export default function App() {
         {showSummary ? (
           <AllMonthsSummary
             months={data.months}
+            sections={sections}
             monthKeys={monthKeys.length ? monthKeys : [selectedMonthKey]}
             bankAccounts={bankAccounts}
             totalIncome={lifetimeTotals.income}
@@ -316,11 +348,12 @@ export default function App() {
                     >
                       <h2 className="font-display text-base font-semibold text-white sm:text-lg">Expense Split</h2>
                       <p className="mt-0.5 text-xs text-ink-500 sm:text-sm">
-                        All nine sections with totals (including ₹0). Click a slice or row to keep a column
+                        All sections with totals (including zero-value rows). Click a slice or row to keep a column
                         highlighted while you scroll.
                       </p>
                       <div className="mt-3">
                         <ExpensePie
+                          sections={sections}
                           byCategory={totals.byCategory}
                           hoverCategory={chartHover}
                           pinnedCategory={chartPinned}
@@ -337,6 +370,8 @@ export default function App() {
 
                     {/* Row 4 */}
                     <CategoryColumns
+                      sections={sections}
+                      customSections={customSections}
                       byCategory={totals.byCategory}
                       expenses={month.expenses}
                       highlightedCategory={chartFocus}
@@ -354,6 +389,10 @@ export default function App() {
                         deleteExpense(selectedMonthKey, id);
                         setAgentTrail((t) => t.filter((x) => x.id !== id));
                       }}
+                      onRenameSection={renameSection}
+                      onAddCustomSection={addCustomSection}
+                      onDeleteCustomSection={deleteCustomSection}
+                      onMoveExpense={(id, category) => moveExpenseToCategory(selectedMonthKey, id, category)}
                     />
                   </motion.div>
                 ) : (

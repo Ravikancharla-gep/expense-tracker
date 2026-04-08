@@ -3,7 +3,6 @@ import { format, parse } from 'date-fns';
 import { ArrowDownToLine, Plus, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { BankAccountBalance, ExpenseCategory, IncomeEntry, IncomeKind, MonthRecord } from '../types';
-import { EXPENSE_CATEGORIES } from '../constants';
 import { AnimatedRupees } from './AnimatedRupees';
 import { formatPlainAmountForInput, formatRupeesFull, parseAmountInput } from '../utils/format';
 import { createId } from '../utils/id';
@@ -13,6 +12,7 @@ import { SalaryForm } from './SalaryForm';
 
 type Props = {
   months: MonthRecord[];
+  sections: ExpenseCategory[];
   monthKeys: string[];
   bankAccounts: BankAccountBalance[];
   totalIncome: number;
@@ -274,6 +274,7 @@ function NetWorthPanel({ netWorth, maskNumbers }: { netWorth: number; maskNumber
 
 export function AllMonthsSummary({
   months,
+  sections,
   monthKeys,
   bankAccounts,
   totalIncome,
@@ -368,14 +369,14 @@ export function AllMonthsSummary({
 
   const byCategoryAllMonths = useMemo(() => {
     const r = {} as Record<ExpenseCategory, number>;
-    for (const c of EXPENSE_CATEGORIES) r[c] = 0;
+    for (const c of sections) r[c] = 0;
     for (const m of months) {
       for (const e of m.expenses) {
-        r[e.category] += e.amount;
+        r[e.category] = (r[e.category] ?? 0) + e.amount;
       }
     }
     return r;
-  }, [months]);
+  }, [months, sections]);
 
   const updateAccount = (id: string, patch: Partial<BankAccountBalance>) => {
     onSetBankAccounts(bankAccounts.map((a) => (a.id === id ? { ...a, ...patch } : a)));
@@ -583,6 +584,7 @@ export function AllMonthsSummary({
 
         <div className="mt-3">
           <ExpensePie
+            sections={sections}
             byCategory={byCategoryAllMonths}
             hoverCategory={chartHover}
             pinnedCategory={chartPinned}

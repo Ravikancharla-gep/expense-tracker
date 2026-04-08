@@ -96,7 +96,8 @@ const LEGACY_CATEGORY_MAP: Record<string, ExpenseCategory> = {
 function migrateExpenseCategory(raw: string): ExpenseCategory {
   if (LEGACY_CATEGORY_MAP[raw]) return LEGACY_CATEGORY_MAP[raw];
   if (VALID_SET.has(raw)) return raw as ExpenseCategory;
-  return 'Other';
+  const clean = String(raw ?? '').trim();
+  return clean || 'Other';
 }
 
 function mapExpenses(expenses: ExpenseEntry[]): ExpenseEntry[] {
@@ -182,6 +183,10 @@ export function migrateRawToAppData(parsed: unknown): AppData | null {
     version: 1,
     months,
     bankAccounts: globalBanks,
+    ...((p.currency === 'USD' || p.currency === 'INR') ? { currency: p.currency } : {}),
+    ...(Array.isArray(p.customSections)
+      ? { customSections: p.customSections.filter((x): x is string => typeof x === 'string' && x.trim().length > 0) }
+      : {}),
     ...(investmentProfit !== undefined ? { investmentProfit } : {}),
     ...(categoryTileImages ? { categoryTileImages } : {}),
   };
@@ -262,6 +267,10 @@ export function mergeAppDataLayers(...layers: AppData[]): AppData {
         expenses: m.expenses.map((e) => ({ ...e })),
       })),
       bankAccounts: only.bankAccounts.map((a) => ({ ...a })),
+      ...((only.currency === 'USD' || only.currency === 'INR') ? { currency: only.currency } : {}),
+      ...(only.customSections && only.customSections.length > 0
+        ? { customSections: [...only.customSections] }
+        : {}),
       ...(typeof only.investmentProfit === 'number' && Number.isFinite(only.investmentProfit)
         ? { investmentProfit: only.investmentProfit }
         : {}),
@@ -276,11 +285,15 @@ export function mergeAppDataLayers(...layers: AppData[]): AppData {
   const banks = new Map<string, BankAccountBalance>();
   let investmentProfit: number | undefined;
   const categoryTileImages: Record<string, string> = {};
+  let currency: 'INR' | 'USD' | undefined;
+  const customSectionSet = new Set<string>();
 
   for (const src of nonEmpty) {
     if (typeof src.investmentProfit === 'number' && Number.isFinite(src.investmentProfit)) {
       investmentProfit = src.investmentProfit;
     }
+    if (src.currency === 'USD' || src.currency === 'INR') currency = src.currency;
+    for (const s of src.customSections ?? []) customSectionSet.add(s);
     if (src.categoryTileImages) {
       Object.assign(categoryTileImages, src.categoryTileImages);
     }
@@ -309,6 +322,8 @@ export function mergeAppDataLayers(...layers: AppData[]): AppData {
     bankAccounts: [...banks.values()],
   };
   if (investmentProfit !== undefined) out.investmentProfit = investmentProfit;
+  if (currency) out.currency = currency;
+  if (customSectionSet.size > 0) out.customSections = [...customSectionSet];
   if (Object.keys(categoryTileImages).length > 0) out.categoryTileImages = categoryTileImages;
   return out;
 }

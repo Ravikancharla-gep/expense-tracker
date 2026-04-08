@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { ChevronDown, DatabaseBackup, LogOut } from 'lucide-react';
+import { ChevronDown, DatabaseBackup, KeyRound, LogOut } from 'lucide-react';
 
 function initialsFromEmail(email: string): string {
   const local = email.split('@')[0]?.trim() ?? email;
@@ -16,11 +16,15 @@ type Props = {
   email: string;
   onSignOut: () => Promise<void>;
   onOpenDataRecovery?: () => void;
+  onChangePassword?: (nextPassword: string) => Promise<void>;
 };
 
-export function ProfileMenu({ email, onSignOut, onOpenDataRecovery }: Props) {
+export function ProfileMenu({ email, onSignOut, onOpenDataRecovery, onChangePassword }: Props) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  const [nextPassword, setNextPassword] = useState('');
+  const [passwordMsg, setPasswordMsg] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
 
@@ -78,7 +82,6 @@ export function ProfileMenu({ email, onSignOut, onOpenDataRecovery }: Props) {
       {open && (
         <div
           id={`${menuId}-menu`}
-          role="menu"
           aria-labelledby={`${menuId}-trigger`}
           className="absolute right-0 top-[calc(100%+0.5rem)] z-50 min-w-[14rem] rounded-2xl border border-white/10 bg-ink-950/95 py-2 shadow-2xl shadow-black/50 backdrop-blur-xl"
         >
@@ -89,10 +92,57 @@ export function ProfileMenu({ email, onSignOut, onOpenDataRecovery }: Props) {
             </p>
           </div>
           <div className="px-1 pt-1">
+            {onChangePassword && (
+              <>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    setPasswordOpen((v) => !v);
+                    setPasswordMsg(null);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-sm font-medium text-violet-200/95 transition hover:bg-violet-500/15 hover:text-violet-100 disabled:opacity-50"
+                >
+                  <KeyRound className="h-4 w-4 shrink-0 opacity-90" />
+                  <span>Change password</span>
+                </button>
+                {passwordOpen && (
+                  <div className="mx-2 mb-2 mt-1 rounded-xl border border-white/10 bg-black/25 p-2">
+                    <input
+                      type="password"
+                      value={nextPassword}
+                      onChange={(e) => setNextPassword(e.target.value)}
+                      placeholder="New password"
+                      className="w-full rounded-lg border border-white/10 bg-ink-950 px-2 py-1.5 text-xs text-white placeholder:text-ink-600"
+                    />
+                    <button
+                      type="button"
+                      disabled={busy || nextPassword.trim().length < 6}
+                      onClick={async () => {
+                        setBusy(true);
+                        setPasswordMsg(null);
+                        try {
+                          await onChangePassword(nextPassword.trim());
+                          setNextPassword('');
+                          setPasswordMsg('Password updated.');
+                        } catch (err) {
+                          setPasswordMsg(err instanceof Error ? err.message : 'Unable to update password.');
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}
+                      className="mt-2 w-full rounded-lg bg-violet-600 px-2 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                    >
+                      Update password
+                    </button>
+                    {passwordMsg && <p className="mt-1 text-[10px] text-ink-400">{passwordMsg}</p>}
+                  </div>
+                )}
+              </>
+            )}
             {onOpenDataRecovery && (
               <button
                 type="button"
-                role="menuitem"
                 disabled={busy}
                 onClick={() => {
                   onOpenDataRecovery();
@@ -109,7 +159,6 @@ export function ProfileMenu({ email, onSignOut, onOpenDataRecovery }: Props) {
             )}
             <button
               type="button"
-              role="menuitem"
               disabled={busy}
               onClick={() => void handleSignOut()}
               className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-sm font-medium text-rose-200/95 transition hover:bg-rose-500/15 hover:text-rose-100 disabled:opacity-50"

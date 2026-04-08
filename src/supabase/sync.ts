@@ -27,6 +27,13 @@ export type RemoteSnapshot = {
   updatedAt: Date;
 };
 
+class SyncError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SyncError';
+  }
+}
+
 export function cloudAvailable(): boolean {
   return isCloudConfigured && getSupabase() !== null;
 }
@@ -41,13 +48,20 @@ export async function fetchRemoteSnapshot(userId: string): Promise<RemoteSnapsho
     .eq('user_id', userId)
     .maybeSingle();
 
-  if (error || !data) return null;
+  if (error) {
+    throw new SyncError(`Cloud read failed: ${error.message}`);
+  }
+  if (!data) return null;
 
   const payload = data.payload as AppData | null;
-  if (!payload || payload.version !== 1 || !Array.isArray(payload.months)) return null;
+  if (!payload || payload.version !== 1 || !Array.isArray(payload.months)) {
+    throw new SyncError('Cloud snapshot payload is invalid.');
+  }
 
   const updatedAt = new Date(String((data as { updated_at?: string }).updated_at ?? 0));
-  if (Number.isNaN(updatedAt.getTime())) return null;
+  if (Number.isNaN(updatedAt.getTime())) {
+    throw new SyncError('Cloud snapshot timestamp is invalid.');
+  }
 
   return { payload, updatedAt };
 }
@@ -70,8 +84,7 @@ export async function pushRemoteSnapshot(userId: string, data: AppData): Promise
     .maybeSingle();
 
   if (error) {
-    console.error('[sync]', error.message);
-    return null;
+    throw new SyncError(`Cloud write failed: ${error.message}`);
   }
 
   const ts = row?.updated_at ? new Date(String(row.updated_at)) : new Date();
@@ -90,14 +103,17 @@ export type SyncDecision =
  */
 export async function decideSnapshotSync(userId: string, localData: AppData): Promise<SyncDecision> {
   const remote = await fetchRemoteSnapshot(userId);
+  const lRich = snapshotRichness(localData);
   if (!remote) {
+    // Never create/overwrite cloud state from an empty brand-new device.
+    if (lRich === 0) return { action: 'noop' };
     return { action: 'push' };
   }
 
   const remoteMs = remote.updatedAt.getTime();
   const localTs = getSyncMeta(userId).localModifiedAt;
   const rRich = snapshotRichness(remote.payload);
-  const lRich = snapshotRichness(localData);
+  // local richness computed above
 
   // Another device has real rows; this device is still empty — always take cloud.
   if (lRich === 0 && rRich > 0) {

@@ -3,13 +3,31 @@ const enInOptsDecimal: Intl.NumberFormatOptions = {
   minimumFractionDigits: 0,
   maximumFractionDigits: 2,
 };
+const enUsOptsWhole: Intl.NumberFormatOptions = { maximumFractionDigits: 0 };
+const enUsOptsDecimal: Intl.NumberFormatOptions = {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2,
+};
+
+let activeCurrency: 'INR' | 'USD' = 'INR';
+
+export function setActiveCurrency(currency: 'INR' | 'USD'): void {
+  activeCurrency = currency;
+}
+
+export function getCurrencySymbol(): string {
+  return activeCurrency === 'USD' ? '$' : '₹';
+}
 
 /** Full Indian-locale rupees for accounting (e.g. ₹1,09,455 or ₹44,879.50) */
 export function formatRupeesFull(value: number): string {
-  if (!Number.isFinite(value)) return '₹0';
+  if (!Number.isFinite(value)) return `${getCurrencySymbol()}0`;
   const isWhole = Math.abs(value - Math.round(value)) < 1e-9;
-  const opts = isWhole ? enInOptsWhole : enInOptsDecimal;
-  return `₹${value.toLocaleString('en-IN', opts)}`;
+  const opts = activeCurrency === 'USD'
+    ? (isWhole ? enUsOptsWhole : enUsOptsDecimal)
+    : (isWhole ? enInOptsWhole : enInOptsDecimal);
+  const locale = activeCurrency === 'USD' ? 'en-US' : 'en-IN';
+  return `${getCurrencySymbol()}${value.toLocaleString(locale, opts)}`;
 }
 
 /**
@@ -22,8 +40,11 @@ export function formatPlainAmountForInput(value: number): string {
   const neg = value < 0;
   const abs = Math.abs(value);
   const isWhole = Math.abs(abs - Math.round(abs)) < 1e-9;
-  const opts = isWhole ? enInOptsWhole : enInOptsDecimal;
-  const formatted = abs.toLocaleString('en-IN', opts);
+  const opts = activeCurrency === 'USD'
+    ? (isWhole ? enUsOptsWhole : enUsOptsDecimal)
+    : (isWhole ? enInOptsWhole : enInOptsDecimal);
+  const locale = activeCurrency === 'USD' ? 'en-US' : 'en-IN';
+  const formatted = abs.toLocaleString(locale, opts);
   return neg ? `-${formatted}` : formatted;
 }
 

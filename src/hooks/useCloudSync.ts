@@ -4,14 +4,24 @@ import type { AppData } from '../types';
 import { getSupabase, isCloudConfigured } from '../supabase/client';
 import {
   decideSnapshotSync,
+  fetchRemoteSnapshot,
   pushRemoteSnapshot,
   pushSnapshotKeepalive,
   reconcileAfterAuth,
 } from '../supabase/sync';
 
-const RECONCILE_DEBOUNCE_MS = 1800;
+const RECONCILE_DEBOUNCE_MS = 600;
+const PUSH_DEBOUNCE_MS = 300;
+const SNAPSHOT_TABLE = 'expense_tracker_snapshots';
+const PERIODIC_RECONCILE_MS = 5000;
 
 export type SyncStatus = 'idle' | 'pending' | 'syncing' | 'synced' | 'error' | 'offline';
+
+function snapshotRichness(d: AppData): number {
+  let n = d.bankAccounts.length;
+  for (const m of d.months) n += m.income.length + m.expenses.length;
+  return n;
+}
 
 /**
  * Background Supabase snapshot reconcile + push + periodic pull.
@@ -32,6 +42,7 @@ export function useCloudSync(
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(isCloudConfigured ? 'idle' : 'offline');
   const tokenRef = useRef('');
   const lastReconcileRef = useRef<{ userId: string; at: number } | null>(null);
+  const lastRemoteSeenMsRef = useRef<number>(0);
 
   // Keep access token fresh so the beforeunload flush can attach it.
   useEffect(() => {
@@ -60,6 +71,8 @@ export function useCloudSync(
         if (r.action === 'pulled') {
           replaceAllData(r.data);
         }
+        const remote = await fetchRemoteSnapshot(userId);
+        if (remote) lastRemoteSeenMsRef.current = Math.max(lastRemoteSeenMsRef.current, remote.updatedAt.getTime());
         setSyncStatus('synced');
       } catch {
         setSyncStatus('error');
@@ -101,7 +114,7 @@ export function useCloudSync(
           setSyncStatus('error');
         }
       })();
-    }, 1200);
+    }, PUSH_DEBOUNCE_MS);
 
     return () => clearTimeout(t);
   }, [data, user, replaceAllData, dataReady]);
@@ -112,15 +125,21 @@ export function useCloudSync(
 
     const handleVisibility = () => {
       if (document.visibilityState === 'hidden') {
-        void pushRemoteSnapshot(user.id, dataRef.current);
+        void (async () => {
+          try {
+            const d = await decideSnapshotSync(user.id, dataRef.current);
+            if (d.action === 'push') await pushRemoteSnapshot(user.id, dataRef.current);
+          } catch {
+            /* best-effort on hide */
+          }
+        })();
         return;
       }
       void (async () => {
         try {
           const d = await decideSnapshotSync(user.id, dataRef.current);
-          if (d.action === 'pull') {
-            replaceAllData(d.data);
-          }
+          if (d.action === 'pull') replaceAllData(d.data);
+          if (d.action === 'push') await pushRemoteSnapshot(user.id, dataRef.current);
           setSyncStatus('synced');
         } catch {
           setSyncStatus('error');
@@ -135,18 +154,64 @@ export function useCloudSync(
       void (async () => {
         try {
           const d = await decideSnapshotSync(user.id, dataRef.current);
-          if (d.action === 'pull') {
-            replaceAllData(d.data);
+          if (d.action === 'pull') replaceAllData(d.data);
+          if (d.action === 'push') await pushRemoteSnapshot(user.id, dataRef.current);
+          const remote = await fetchRemoteSnapshot(user.id);
+          if (remote) {
+            const remoteMs = remote.updatedAt.getTime();
+            if (remoteMs > lastRemoteSeenMsRef.current) {
+              lastRemoteSeenMsRef.current = remoteMs;
+              replaceAllData(remote.payload);
+            }
           }
         } catch {
-          /* next poll may recover */
+          setSyncStatus('error');
         }
       })();
-    }, 45_000);
+    }, PERIODIC_RECONCILE_MS);
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibility);
       window.clearInterval(interval);
+    };
+  }, [user, replaceAllData, dataReady]);
+
+  // ---------- Realtime pull: when another device writes, this device refreshes quickly ----------
+  useEffect(() => {
+    const sb = getSupabase();
+    if (!sb || !user || !isCloudConfigured || !dataReady) return;
+
+    const channel = sb
+      .channel(`expense-sync-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: SNAPSHOT_TABLE,
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          void (async () => {
+            try {
+              // Fast-path realtime: fetch latest row and apply immediately.
+              const remote = await fetchRemoteSnapshot(user.id);
+              if (!remote) return;
+              const remoteMs = remote.updatedAt.getTime();
+              if (remoteMs <= lastRemoteSeenMsRef.current) return;
+              lastRemoteSeenMsRef.current = remoteMs;
+              replaceAllData(remote.payload);
+              setSyncStatus('synced');
+            } catch {
+              setSyncStatus('error');
+            }
+          })();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void sb.removeChannel(channel);
     };
   }, [user, replaceAllData, dataReady]);
 
@@ -155,7 +220,8 @@ export function useCloudSync(
     if (!user || !isCloudConfigured || !dataReady) return;
 
     const flush = () => {
-      if (tokenRef.current) {
+      // Never flush an empty snapshot on unload; that can wipe cloud from a new device.
+      if (tokenRef.current && snapshotRichness(dataRef.current) > 0) {
         pushSnapshotKeepalive(user.id, dataRef.current, tokenRef.current);
       }
     };

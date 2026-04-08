@@ -1,12 +1,13 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import type { ExpenseCategory } from '../types';
-import { CATEGORY_COLORS, EXPENSE_CATEGORIES } from '../constants';
+import { getCategoryColor } from '../constants';
 import { formatRupeesFull } from '../utils/format';
 
 type Slice = { name: ExpenseCategory; value: number };
 
 type Props = {
+  sections: ExpenseCategory[];
   byCategory: Record<ExpenseCategory, number>;
   hoverCategory: ExpenseCategory | null;
   pinnedCategory: ExpenseCategory | null;
@@ -25,6 +26,7 @@ type Props = {
 };
 
 export function ExpensePie({
+  sections,
   byCategory,
   hoverCategory,
   pinnedCategory,
@@ -49,7 +51,7 @@ export function ExpensePie({
     document.addEventListener('pointerdown', handlePointerDown, true);
     return () => document.removeEventListener('pointerdown', handlePointerDown, true);
   }, [onDismissPin]);
-  const pieData: Slice[] = EXPENSE_CATEGORIES.map((name) => ({
+  const pieData: Slice[] = sections.map((name) => ({
     name,
     value: byCategory[name],
   })).filter((d) => d.value > 0);
@@ -157,7 +159,7 @@ export function ExpensePie({
                     return (
                       <Cell
                         key={entry.name}
-                        fill={CATEGORY_COLORS[entry.name]}
+                        fill={getCategoryColor(entry.name)}
                         fillOpacity={dimmed ? 0.38 : 1}
                         style={{ outline: 'none', cursor: 'pointer' }}
                       />
@@ -186,7 +188,7 @@ export function ExpensePie({
           All sections
         </p>
         <ul className="scrollbar-none mt-2 flex flex-col space-y-1.5">
-          {EXPENSE_CATEGORIES.map((cat) => {
+          {sections.map((cat) => {
             const v = byCategory[cat];
             const active = focus === cat;
             const isPinned = pinnedCategory === cat;
@@ -208,7 +210,7 @@ export function ExpensePie({
                   <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-ink-200 sm:text-xs">
                     <span
                       className="mr-1.5 inline-block h-2 w-2 shrink-0 rounded-sm"
-                      style={{ backgroundColor: CATEGORY_COLORS[cat] }}
+                      style={{ backgroundColor: getCategoryColor(cat) }}
                     />
                     {cat}
                   </span>

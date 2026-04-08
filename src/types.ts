@@ -1,13 +1,4 @@
-export type ExpenseCategory =
-  | 'Family'
-  | 'Transport'
-  | 'Recharges'
-  | 'Food'
-  | 'Bills'
-  | 'Shopping'
-  | 'Personal Care'
-  | 'Enjoy'
-  | 'Other';
+export type ExpenseCategory = string;
 
 export type IncomeKind = 'salary' | 'other' | 'investment';
 
@@ -42,6 +33,8 @@ export interface AppData {
   version: 1;
   months: MonthRecord[];
   bankAccounts: BankAccountBalance[];
+  currency?: 'INR' | 'USD';
+  customSections?: ExpenseCategory[];
   /**
    * Profit/loss on investments (user-entered). Used for net worth; may be negative (e.g. sales).
    * Percentage is derived vs. total investment income when invested ≠ 0.

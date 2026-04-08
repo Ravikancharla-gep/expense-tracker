@@ -84,11 +84,19 @@ export function useSupabaseAuth() {
     setUser(null);
   }, []);
 
+  const updatePassword = useCallback(async (newPassword: string) => {
+    const sb = getSupabase();
+    if (!sb) return { error: 'Supabase is not configured.' };
+    const { error } = await sb.auth.updateUser({ password: newPassword });
+    return { error: error?.message ?? null };
+  }, []);
+
   return {
     user,
     authLoading,
     signInWithPassword,
     signUpWithPassword,
     signOut,
+    updatePassword,
   };
 }
